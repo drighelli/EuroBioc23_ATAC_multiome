@@ -1,12 +1,12 @@
 ---
-title: "An introduction to the TENxMultiomeTools package 2"
+title: "Differential Accessible Regions analysis of single-cell 10X Genomics multiome data"
 author: "Dario Righelli"
 date: "`r Sys.Date()`"
 output: 
     BiocStyle::html_document:
         toc: false
     vignette: >
-      %\VignetteIndexEntry{An introduction to the TENxMultiomeTools package}
+      %\VignetteIndexEntry{Differential Accessible Regions analysis of single-cell 10X Genomics multiome data}
       %\VignetteEncoding{UTF-8}
       %\VignetteEngine{knitr::rmarkdown}
 editor_options: 
@@ -15,7 +15,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 library(BiocStyle)
-knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, eval=FALSE)
 ```
 
 # Requirements
@@ -84,7 +84,7 @@ are stored in the `mcols` `DataFrame.`
 N.B. The `read10xMultiome` function will be deprecated in favor of the 
 exported functionalities of the `TENxIO` package.
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 path="multiome_website_mouse_old/outs/"
 sce <- read10xMultiome(
     sample.path=path,
@@ -94,20 +94,30 @@ sce <- read10xMultiome(
     col.names=TRUE,
     addfrags=TRUE,
     reference="RNA")
-sce
-colData(sce)
-rowData(sce)
-altExp(sce)
-rowRanges(altExp(sce))
 
 
-scelist <- lapply(c("multiome_website_mouse_old", "multiome_website_mouse_old_rep2"),    
-    read10xMultiome, 
-        type="HDF5", addfrags=TRUE)
+scelist <- lapply(c("multiome_website_mouse_old", 
+                    "multiome_website_mouse_old_rep2"),    
+                read10xMultiome, 
+                type="HDF5", 
+                addfrags=TRUE)
 
 names(scelist) <- c("Brain_R1", "Brain_R2")
-
 ```
+
+
+```{r}
+scelist <- readRDS("scelist_eurobioc23.RDS")
+for(sce in scelist)
+{
+    sce
+    colData(sce)
+    rowData(sce)
+    altExp(sce)
+    rowRanges(altExp(sce))
+}
+```
+
 
 # Create Annotation
 
@@ -329,7 +339,7 @@ Indeed, further versions of this function will implement other methods,
 i.e. `Azimuth` from Rahul Satija lab.
 
 ```{r, eval=FALSE}
-scelist <- lapply(scelist, function(sce){assignLabels(sce, allen, "subclass_label")})
+    scelist <- lapply(scelist, function(sce){assignLabels(sce, allen, "subclass_label")})
 ```
 
 # Visualizing cell types
@@ -398,6 +408,7 @@ scelistps <- lapply(scelist, function(sce){
 At this point it is possible to apply and visualize the data like bulk data.
 
 ```{r}
+
 plotPCA(sce_pseudo, colour_by="SingleR")
 ```
 
@@ -443,6 +454,7 @@ Parameters Details:
 + `sampleName`: the name of the sample
 + `cellType`: the name of the cell type to process
 + `cellTypesCol`: the name of che colData colname where to get the cell types 
++ `sort`: it sorts the bam file with `samtools`
 + `bamdir`: the directory where to get the input bams, if you used the 
 `read10xMultiome` function this information is stored in the `metadata(sce)$path`
 + `bamType`: one of `ATAC, GEX, both` to process one of the assays or both
@@ -456,13 +468,15 @@ NB This is not needed if you already have the BAM files organized by cell types.
 # detach("package:TENxMultiomeTools", unload=TRUE)
 # BiocManager::install("drighelli/TENxMultiomeTools", update=FALSE, ask=FALSE)
 # library(TENxMultiomeTools)
-scelist <- lapply(scelist, function(sce){
-    lapply(unique(sce$SingleR), function(ct){
+scelist1 <- lapply(scelist, function(sce){
+    path <- lapply(unique(sce$SingleR), function(ct){
         createBamCt(sce, cellType=ct, 
-            cellTypesCol="SingleR",
+            cellTypesCol="SingleR", sort=TRUE,
             bamdir=metadata(sce)$path, bamType="ATAC", 
-            outdir="bioc23/bams_allct", ncores=10)   
+            outdir="bioc23/bams_allct", ncores=10)
     })
+    metadata(sce)$ct_bams <- unique(unlist(path))
+    sce
 })
 
 ```
@@ -529,30 +543,54 @@ To compute this for all the cell types we include these operations in a loop
 over all the celltypes present in the SingleCellExperiments.
 
 ```{r}
+# bams <- list.files("bioc23/bams_allct", pattern="*sorted.bam$", full.names=TRUE)
+# bams <- bams[grep("ATAC", bams)]
+# bamdir <- "bioc23/bams_allct/ATAC"
+# dir.create(bamdir, recursive=TRUE, showWarnings=FALSE)
+# file.rename(bams, file.path(bamdir, basename(bams)))
+# bams <- list.files(bamdir, pattern="*sorted.bam$", full.names=TRUE)
 
-bams <- list.files("bioc23/bams_allct", pattern="*.bam", full.names=TRUE)
-bams <- bams[grep("ATAC", bams)]
-bamdir <- "bioc23/bams_allct/ATAC"
-dir.create(bamdir, recursive=TRUE, showWarnings=FALSE)
-file.rename(bams, file.path(bamdir, basename(bams)))
-
-lapply(celltypes, function(ct)
+grlct <- lapply(celltypes, function(ct)
 {
     grl <- lapply(scelist, function(sce) {
+        message("computing atac scores")
         # this function helps to create a score for the CT
         sce <- buildATACScores(sce, cellType=ct)
-        rowRanges(altExp(sce))}) 
+        rowRanges(altExp(sce))
+    }) 
+    message("Computing final regions")
     # we now work only with the rowRanges of both the experiments
     gr <- finalRegions(GRangesList(grl), 
         zThreshold=0, minCarriers=1, saveFlag=FALSE, 
         scorecolname="score", verbose=TRUE,
         BPPARAM=BiocParallel::MulticoreParam(workers=1)) 
-    grSE <- countFinalRegions(gr, readsFilePath=bamdir, 
-                    fileType="bam", minCarriers=1)
+    # message("Computing count final regions")
+    # grSE <- countFinalRegions(gr, readsFilePath=bamdir, 
+    #                 fileType="bam", minCarriers=1)
 })
-
 ```
 
+We inspect the number of consensus peaks list present in each celltype to 
+compare this information across all the celltypes.
+Obviously, in this case the starting samples are the same for all the celltypes 
+so we obtain the same number of peaks. 
+This changes when we work with samples of different conditions.
+
+The main aim of this plot is to understand how many peaks we have across the 
+samples present in our experiment.
+
+Typically the number of peaks decreases with the increasing of the samples, 
+allowing us to suddenly understand how many peaks we want to work with  
+during the further analysis.
+
+```{r}
+## Create plot with number of peaks and "carriers" (Celltypes in this case)
+grlct <- readRDS("~/Downloads/grlct.RDS")
+plotPeaksSamplesDEScan2(grlct)
+```
+
+
+    
 
 ## Future development
 
@@ -564,20 +602,140 @@ the pseudo-count matrix computed on the multiple experiments.
 
 
 
-Additionally, both previous operations on a single experiment can be made with 
-our wrapper `computePseudoBulk` in a unique instruction that computes 
-pseudo-bulk counts both for RNA and ATAC assays.
 
-```{r, eval=FALSE}
-sce_pseudo <- computePseudoBulk(sce, ctCol="SingleR")
+# Differential Accessible Regions Analysis
+
+```{r}
+library(HDF5Array)
+library(scater)
+library(RColorBrewer)
+n <- 50
+palette = brewer.pal.info[brewer.pal.info$category == 'qual',]
+palette = unlist(mapply(brewer.pal, palette$maxcolors, rownames(palette)))
+sce1 <- loadHDF5SummarizedExperiment("~/Downloads/sce_Alzheimer_Ann_Tsn")
+plotTSNE(sce1, colour_by="SingleR") + theme_bw() + scale_color_manual(values = palette)
+plotTSNE(sce1, colour_by="condition") + theme_bw() 
+
+library(darioscripts)
+sce57aATAC <- readRDS("~/Downloads/sce_alz_57_ps_ATAC.RDS")
+sce57aATAC$replicate <- gsub("rep6", "rep3", sce57aATAC$replicate)
+sce57aATAC$cnames <- paste0(sce57aATAC$SingleR, "_", sce57aATAC$genotype, "_" , sce57aATAC$replicate)
+colnames(sce57aATAC) <- sce57aATAC$cnames
+
+plotPCAs(counts(sce57aATAC),colData=colData(sce57aATAC), shapeBy="genotype", colorBy="SingleR")
+
+sce57aATACct <- sce57aATAC[,sce57aATAC$SingleR==""]
+plotPCAs(counts(sce57aATACct),colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate")
 ```
 
-At this point, it is easy to apply standard bulk pipelines to obtain 
-differentially expressed genes and differentially accessible regions, 
-per each cell type across different conditions.
 
-Like applying normalization, PCA, gene-filtering and classical differential 
-approaches like `edgeR` and `DESeq2`.
+# Normalize data
+
+```{r}
+library(RUVSeq)
+gr <- makeGroups(sce57aATACct$genotype)
+nn <- RUVs(counts(sce57aATACct), cIdx=rownames(sce57aATACct), k=1, scIdx=gr)
+plotPCAs(nn$normalizedCounts, colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate")  
+sce57aATACct$RUVs_W <- nn$W
+DARsdf <- applyEdgeR(counts(sce57aATACct), colData=colData(sce57aATACct), 
+    factors="genotype", wnames="RUVs_W", contrasts="AD - WT", p.threshold=0.1)[[1]]
+DARsdf
+```
+
+## ksdjakdjsa
+
+
+```{r}
+
+library(darioscripts)
+sce57179aATAC <- readRDS("~/Downloads/sce_alz_57_179_ps_ATAC.RDS")
+sce57179aATAC$replicate <- gsub("rep4", "rep2", sce57179aATAC$replicate)
+sce57179aATAC$replicate <- gsub("rep5", "rep3", sce57179aATAC$replicate)
+sce57179aATAC$cnames <- paste0(sce57179aATAC$SingleR, "_", sce57179aATAC$genotype, "_" , sce57179aATAC$replicate)
+colnames(sce57179aATAC) <- sce57179aATAC$cnames
+
+plotPCAs(counts(sce57179aATAC),colData=colData(sce57179aATAC), shapeBy="genotype", colorBy="SingleR")+ scale_color_manual(values = palette)
+
+sce57179aATACct <- sce57179aATAC[,sce57179aATAC$SingleR=="Oligo"]
+plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate")
+```
+
+
+
+
+```{r}
+library(RUVSeq)
+gr <- makeGroups(sce57179aATACct$gcondition)
+nn <- RUVs(counts(sce57179aATACct), cIdx=rownames(sce57179aATACct), k=1, scIdx=gr)
+plotPCAs(nn$normalizedCounts, colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate")  
+sce57179aATACct$RUVs_W <- nn$W
+DARsdf <- applyEdgeR(counts(sce57179aATACct), colData=colData(sce57179aATACct), 
+    factors="genotype", wnames="RUVs_W", contrasts="AD - WT", p.threshold=1)[[1]]
+DARsdf[DARsdf$FDR<0.05,]
+DARsdf$gene <- rownames(DARsdf)
+
+PlotVolcanoPlot(DARsdf, as.data.frame(counts(sce57179aATACct)), 
+                design.matrix=colData(sce57179aATACct), show.plot.flag=TRUE, threshold=0.1)
+```
+
+
+
+# MACS2 peaks
+
+If we are not satisfied with cellranger-ARC peaks, as many authors suggests, we
+can take advantage of the MACS2 peak caller.
+
+MACS2 is a widely used peak caller for bulk genomics data, it is a shell command
+and it has functionalities for narrow and broad peaks.
+
+Also in this case, because we want to construct pseudo-bulk like data for our ATAC
+assays, we need to split the original cellranger BAM files in multiple BAM files, 
+one per each cell type. (see section *Creating BAM files per cell types*)
+
+We created an ad-hoc wrapper for working with MACS2 and previously constructed
+BAM files taking a SingleCellExperiment as input.
+
+```{r}
+
+wrapMacs2 <- function(sce, outdir, genome="mm", nomodel="--nomodel", 
+    extsize=200, shift=-(extsize/2), broadCall="--broad", bampath=NULL)
+{
+    stopifnot(is(sce, "SingleCellExperiment"))
+    
+    if(is.null(bampath)) bampath <- metadata(sce)$ct_bams 
+    if(S4Vectors::isEmpty(bampath)) 
+        stop("please provide a path for locating bam files!")
+    
+    bamfiles <- list.files(bampath, pattern="*_sorted.bam$", full.names=TRUE)
+    bamfiles <- bamfiles[grep("ATAC", bamfiles)]
+    if(isEmpty(bamfiles))
+        stop("No BAM files detected in ", bampath)
+    if(!dir.exists(outdir)) dir.create(outdir, recursive=TRUE)
+    
+
+    for(bfile in bamfiles)
+    {
+        cmd <- paste0("macs2 callpeak --treatment ", bfile, 
+                    " --name ", basename(bfile), 
+                    " --outdir ", outdir, 
+                    " --format BAM --gsize ", genome, 
+                    " ", nomodel,
+                    " --extsize ", extsize,
+                    " --shift ", shift,
+                    " ", broadCall)
+                    
+        print(cmd)
+        system(cmd)
+    }
+    
+    ## read peaks for all the produced files, store the peaks in the rowRanges of sce
+    ## add an extra column for the cell type
+}
+```
+
+
+
+
 
 # Create and export tracks
 
