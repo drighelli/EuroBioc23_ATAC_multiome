@@ -21,13 +21,14 @@ knitr::opts_chunk$set(echo = TRUE, cache=TRUE, eval=FALSE)
 # Requirements
 
 ```{r, message=FALSE}
-library(TENxMultiomeTools)
+
 library(AllenInstituteBrainData)
 library(Signac)
 library(Seurat)
 library(EnsDb.Mmusculus.v79)
 library(scuttle)
 library(scater)
+library(darioscripts)
 ```
 
 # Introduction
@@ -85,17 +86,7 @@ N.B. The `read10xMultiome` function will be deprecated in favor of the
 exported functionalities of the `TENxIO` package.
 
 ```{r, eval=FALSE}
-path="multiome_website_mouse_old/outs/"
-sce <- read10xMultiome(
-    sample.path=path,
-    type="sparse",
-    data="filtered",
-    compressed=TRUE,
-    col.names=TRUE,
-    addfrags=TRUE,
-    reference="RNA")
-
-
+library(TENxMultiomeTools)
 scelist <- lapply(c("multiome_website_mouse_old", 
                     "multiome_website_mouse_old_rep2"),    
                 read10xMultiome, 
@@ -103,19 +94,19 @@ scelist <- lapply(c("multiome_website_mouse_old",
                 addfrags=TRUE)
 
 names(scelist) <- c("Brain_R1", "Brain_R2")
+saveRDS(scelist, "RDS/scelist_10xBrain.RDS")
 ```
 
 
 ```{r}
-scelist <- readRDS("scelist_eurobioc23.RDS")
-for(sce in scelist)
-{
-    sce
-    colData(sce)
-    rowData(sce)
-    altExp(sce)
-    rowRanges(altExp(sce))
-}
+scelist <- readRDS("RDS/scelist_10xBrain.RDS")
+sce <- scelist[[1]]
+sce
+colData(sce)
+rowData(sce)
+altExp(sce)
+rowRanges(altExp(sce))
+
 ```
 
 
@@ -127,6 +118,9 @@ A way to avoid this is to create an annotation by aid of an EnsDb package, which
 downloads the annotation data for an entire genome.
 
 ```{r, message=FALSE, warning=FALSE}
+library(Signac)
+library(Seurat)
+library(EnsDb.Mmusculus.v79)
 ensdb <- EnsDb.Mmusculus.v79
 seqlevelsStyle(ensdb) <- "UCSC"
 annotation <- GetGRangesFromEnsDb(ensdb = ensdb)
@@ -148,7 +142,7 @@ the `scuttle::isOutlier` and the doublets detection implemented in the
 At the moment we implemented a wrapper for the Signac package (available on CRAN),
 which allows to compute multiple metrics both on RNA and ATAC data.
 
-The metrics computed by Signac are defined as follows: 
+The metrics computed by `Signac` are defined as follows: 
 
 + number of counts per each gene for the RNA and each feature for the ATAC
 + the number of features on the RNA
@@ -157,8 +151,10 @@ to fragments < 147 bp (nucleosome-free)
 + computing the TSS enrichment score as defined by *Encode*: 
     + normalized score on the number of reads around (2000bp up/down) the TSS 
 
-```{r}
+```{r, eval=FALSE}
 scelist <- lapply(scelist, computeSignacMetrics, annotation)
+
+saveRDS(scelist, file="RDS/scelist_metrics.RDS")
 ```
 
 
@@ -185,11 +181,12 @@ function.
 Of course the default parameters can be chosen with an heuristic approach.
 
 ```{r}
+scelist<-readRDS("RDS/scelist_metrics.RDS")
 scelist <- lapply(scelist, function(sce)
 {
     computeFilterCellsMetrics(sce, metric="quantile",
-    lowQuantThr="5%", highQuantThr="90%",
-    nucleosomeThr=2, TSSThr=1)
+        lowQuantThr="5%", highQuantThr="90%",
+        nucleosomeThr=2, TSSThr=1)
 })
 ```
 
@@ -214,43 +211,6 @@ for(sce in scelist)
 {
     plotFilteredCells(sce, name="test", inout="out")
 }
-
-```
-
-## Doublets --> Move after annotation
-
-Another Quality Control on the cells can be done by computing doublets scores.
-We implemented a wrapper on the `scDblFinder` package, 
-because it offers multiple methods for doublets detection.
-In particular, the doublet score for each cell is based on the density of 
-simulated doublets around it.
-
-Even if the results provided by this package are still under verification,
-we suggest to use it to better understand the quality of the cells in the 
-experiment.
-
-Actually, we implemented the method for the scRNAseq data, but further 
-implementations will take into account methods for scATACseq data and further
-investigations need to be done on how to apply these methods on both assays.
-
-```{r}
-scelist <- lapply(scelist, logNormCounts)
-scelist <- lapply(scelist, computeDoublets, method="griffiths")
-```
-
-It is possible to visualize these results with a simple TSNE plot, but better
-investigations can be done when cell types labels will be assigned to our cell 
-and looking where the doublets fall in our dataset.
-
-```{r}
-for(sce in scelist)
-{
-    sce <- runPCA(sce, ntop=length(rownames(sce)))
-    sce <- runTSNE(sce, dimred="PCA")
-    plotTSNE(sce, colour_by="dbl.scores") + theme_bw()
-    plotTSNE(sce, colour_by="dbl.calls") + theme_bw()
-}
-
 ```
 
 ## Filtering Cells
@@ -265,7 +225,8 @@ described in the previous "Signac" steps.
 ```{r}
 scelist <- lapply(scelist, function(sce) {
     sce <- sce[,sce$in_signac]
-    sce <- runPCA(sce, ntop=length(rownames(sce)))
+    sce <- logNormCounts(sce)
+    sce <- runPCA(sce)
     sce <- runTSNE(sce, dimred="PCA")
     sce
 })
@@ -307,23 +268,14 @@ pretty good approximation in terms of the obtained results.
 allen <- AllenInstituteBrainData("Allen_Mouse_2020")
 allen <- aggregateAcrossCells(allen, use.assay.type = "counts",id=DataFrame(label=allen$subclass_label))
 allen <- logNormCounts(allen)
+saveRDS(allen, "RDS/Allen_pseudo.RDS")
 ```
 
 We need to map the annotation in the same gene format as our dataset to compute
 the cell labels in the next step.
 
 ```{r}
-allen <- readRDS("allen_pseudo.RDS")
-rownames(allen) <- rowData(allen)$X
-symbol_allen <- rownames(allen)
-map <- mapIds(EnsDb.Mmusculus.v79, keys= symbol_allen, keytype = "SYMBOL", 
-        column = "GENEID")
-stopifnot(length(map) == nrow(allen))
-rowData(allen)$symbol <- symbol_allen
-rowData(allen)$ens <- map
-allen <- allen[!is.na(rowData(allen)$ens),]
-rownames(allen) <- rowData(allen)$ens
-allen <- logNormCounts(allen)
+allen <- readRDS("RDS/Allen_pseudo.RDS")
 ```
 
 
@@ -339,7 +291,9 @@ Indeed, further versions of this function will implement other methods,
 i.e. `Azimuth` from Rahul Satija lab.
 
 ```{r, eval=FALSE}
-    scelist <- lapply(scelist, function(sce){assignLabels(sce, allen, "subclass_label")})
+scelist <- lapply(scelist, function(sce) { 
+    assignLabels(sce, allen, "subclass_label")
+})
 ```
 
 # Visualizing cell types
@@ -353,6 +307,52 @@ lapply(scelist, function(sce){table(sce$SingleR)})
 plotTSNE(sce, colour_by="SingleR")
 ```
 
+
+## Doublets
+
+Another Quality Control on the cells can be done by computing doublets scores.
+We implemented a wrapper on the `scDblFinder` package, 
+because it offers multiple methods for doublets detection.
+In particular, the doublet score for each cell is based on the density of 
+simulated doublets around it.
+
+Even if the results provided by this package are still under verification,
+we suggest to use it to better understand the quality of the cells in the 
+experiment.
+
+Actually, we implemented the method for the scRNAseq data, but further 
+implementations will take into account methods for scATACseq data and further
+investigations need to be done on how to apply these methods on both assays.
+
+```{r, eval=FALSE}
+library(scater)
+scelist <- lapply(scelist, logNormCounts)
+scelist <- lapply(scelist, computeDoublets, method="griffiths")
+saveRDS(scelist, file="RDS/scelist_doublets.RDS")
+```
+
+It is possible to visualize these results with a simple TSNE plot, but better
+investigations can be done when cell types labels will be assigned to our cell 
+and looking where the doublets fall in our dataset.
+
+```{r}
+scelist <- readRDS(file="RDS/scelist_doublets.RDS")
+for(sce in scelist)
+{
+    sce <- runPCA(sce)
+    sce <- runTSNE(sce, dimred="PCA")
+    plotTSNE(sce, colour_by="dbl.scores") + theme_bw()
+    plotTSNE(sce, colour_by="dbl.calls") + theme_bw()
+}
+```
+
+We can use this information to remove doublets from the dataset.
+
+```{r}
+scelist <- lapply(scelist, function(sce){sce[,sce$dbl.calls=="singlet"]})
+```
+
+
 For teaching purposes we now subset the celltypes to the ones with the higher 
 amount of cells.
 
@@ -360,7 +360,6 @@ amount of cells.
 celltypes <- c("Astro", "Oligo", "CR")
 scelist <- lapply(scelist, function(sce){sce[,sce$SingleR %in% celltypes]})
 ```
-
 
 # Differential Analysis
 
@@ -397,19 +396,25 @@ In the end, we will have a new `SingleCellExperiment` with a reduced number of
 columns, which, in turn, will be of the same number of cell types defined in our
 `SingleR` `colData` column.
 
-```{r}
+```{r, eval=FALSE}
+scelist <- lapply(scelist, swapAltExp, name="RNA")
 scelistps <- lapply(scelist, function(sce){
-    aggregateAcrossCells(sce, use.assay.type="counts",
+    applySCE(sce, aggregateAcrossCells, use.assay.type="counts",
         id=DataFrame(label=sce$SingleR))
-})
+    })
+    
+saveRDS(scelistps, "RDS/scelistps_brain.RDS")
 ```
-
 
 At this point it is possible to apply and visualize the data like bulk data.
 
 ```{r}
+scelistps <- readRDS("RDS/scelistps_brain.RDS")
 
-plotPCA(sce_pseudo, colour_by="SingleR")
+lapply(scelistps, function(sce){
+    plotPCAs(counts(sce),colData=colData(sce), shapeBy="genotype",    
+                colorBy="SingleR")
+})
 ```
 
 # ATAC Analysis
@@ -418,9 +423,9 @@ The same operation for pseudo bulk can be made on a single ATAC experiment
 obtaining the same number of columns as for the RNA.
 
 ```{r}
-sce_pseudo_atac <- aggregateAcrossCells(altExp(sce), use.assay.type="counts",
-        id=DataFrame(label=sce$SingleR))
-altExp(sce_pseudo) <- sce_pseudo_atac
+scelistps <- lapply(scelistps, swapAltExp, name="ATAC")
+counts(scelistps[[1]])
+rowRanges(scelistps[[1]])
 ```
 
 
@@ -464,16 +469,13 @@ Parameters Details:
 
 NB This is not needed if you already have the BAM files organized by cell types.
 
-```{r}
-# detach("package:TENxMultiomeTools", unload=TRUE)
-# BiocManager::install("drighelli/TENxMultiomeTools", update=FALSE, ask=FALSE)
-# library(TENxMultiomeTools)
-scelist1 <- lapply(scelist, function(sce){
+```{r, eval=FALSE}
+scelist <- lapply(scelist, function(sce){
     path <- lapply(unique(sce$SingleR), function(ct){
         createBamCt(sce, cellType=ct, 
             cellTypesCol="SingleR", sort=TRUE,
             bamdir=metadata(sce)$path, bamType="ATAC", 
-            outdir="bioc23/bams_allct", ncores=10)
+            outdir="bams_allct", ncores=10)
     })
     metadata(sce)$ct_bams <- unique(unlist(path))
     sce
@@ -533,7 +535,7 @@ with 10x default peaks this score is not provided.
 A possible work-around can be done by using the counts/logcounts assay for the 
 ATAC data.
 
-By aid of the 10xMultiome buildATACScores we are able to create a new score column
+By aid of the 10xMultiome `buildATACScores` we are able to create a new score column
 in the rowRanges of the SCE and use this column in the DEScan2 finalRegions function.
 
 The score is defined as the sum of the counts of all the Barcodes assigned to a 
@@ -543,12 +545,6 @@ To compute this for all the cell types we include these operations in a loop
 over all the celltypes present in the SingleCellExperiments.
 
 ```{r}
-# bams <- list.files("bioc23/bams_allct", pattern="*sorted.bam$", full.names=TRUE)
-# bams <- bams[grep("ATAC", bams)]
-# bamdir <- "bioc23/bams_allct/ATAC"
-# dir.create(bamdir, recursive=TRUE, showWarnings=FALSE)
-# file.rename(bams, file.path(bamdir, basename(bams)))
-# bams <- list.files(bamdir, pattern="*sorted.bam$", full.names=TRUE)
 
 grlct <- lapply(celltypes, function(ct)
 {
@@ -564,9 +560,6 @@ grlct <- lapply(celltypes, function(ct)
         zThreshold=0, minCarriers=1, saveFlag=FALSE, 
         scorecolname="score", verbose=TRUE,
         BPPARAM=BiocParallel::MulticoreParam(workers=1)) 
-    # message("Computing count final regions")
-    # grSE <- countFinalRegions(gr, readsFilePath=bamdir, 
-    #                 fileType="bam", minCarriers=1)
 })
 ```
 
@@ -585,10 +578,32 @@ during the further analysis.
 
 ```{r}
 ## Create plot with number of peaks and "carriers" (Celltypes in this case)
-grlct <- readRDS("~/Downloads/grlct.RDS")
+grlct <- readRDS("RDS/grlct.RDS")
 plotPeaksSamplesDEScan2(grlct)
 ```
 
+## Computing Count Matrix 
+
+Once we have the consensus peak list, we can finally construct the new 
+count matrix with `countFinalRegions` function, passing as input the 
+GR of the peaks and the directory of BAM files, producing as output a 
+`SummarizedExperiment`.
+
+```{r, eval=FALSE}
+# bams <- list.files("bioc23/bams_allct", pattern="*sorted.bam$", full.names=TRUE)
+# bams <- bams[grep("ATAC", bams)]
+# bamdir <- "bioc23/bams_allct/ATAC"
+# dir.create(bamdir, recursive=TRUE, showWarnings=FALSE)
+# file.rename(bams, file.path(bamdir, basename(bams)))
+# bams <- list.files(bamdir, pattern="*sorted.bam$", full.names=TRUE)
+
+grlct <- lapply(grlct, function(ct)
+{
+    message("Computing count final regions for ", ct)
+    grSE <- countFinalRegions(gr, readsFilePath=bamdir,
+                    fileType="bam", minCarriers=1)
+})
+```
 
     
 
@@ -599,9 +614,6 @@ At the moment, to provide a solution to this issue, we are implementing
 adapting the `finalRegions` function present in the 
 `DEScan2` package, which will return a new `SingleCellExperiment` object with 
 the pseudo-count matrix computed on the multiple experiments.
-
-
-
 
 # Differential Accessible Regions Analysis
 
@@ -629,7 +641,10 @@ plotPCAs(counts(sce57aATACct),colData=colData(sce57aATACct), shapeBy="genotype",
 ```
 
 
-# Normalize data
+## Normalization
+
+We can try to normalize data to do a better comparison across the conditions, 
+removing biases and improving the quality of the further differential analysis.
 
 ```{r}
 library(RUVSeq)
@@ -637,13 +652,29 @@ gr <- makeGroups(sce57aATACct$genotype)
 nn <- RUVs(counts(sce57aATACct), cIdx=rownames(sce57aATACct), k=1, scIdx=gr)
 plotPCAs(nn$normalizedCounts, colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate")  
 sce57aATACct$RUVs_W <- nn$W
+```
+
+## Differential Analysis
+
+We can now do the Differential Analysis by using edgeR, but as we can notice, 
+there are no DARs between these two time-points.
+
+```{r}
 DARsdf <- applyEdgeR(counts(sce57aATACct), colData=colData(sce57aATACct), 
     factors="genotype", wnames="RUVs_W", contrasts="AD - WT", p.threshold=0.1)[[1]]
 DARsdf
 ```
 
-## ksdjakdjsa
+## Another exaple
 
+At this point we are interested in looking at the differences between celltypes
+but at different time-points.
+
+By comparing time-point 5.7 for the WT genotype with the 17.9 for the AD genotype.
+
+As we can notice, there are very few DARs emerging, even when we are able to explain
+a very high percentage of variance with the first Principal Component.
+This highlights the very low number of DARs with this data.
 
 ```{r}
 
@@ -679,11 +710,10 @@ PlotVolcanoPlot(DARsdf, as.data.frame(counts(sce57179aATACct)),
 ```
 
 
-
 # MACS2 peaks
 
-If we are not satisfied with cellranger-ARC peaks, as many authors suggests, we
-can take advantage of the MACS2 peak caller.
+If we are not satisfied with cellranger-ARC peaks (emerged also with the number 
+of detected DARs), as many authors suggests, we can take advantage of the MACS2 peak caller.
 
 MACS2 is a widely used peak caller for bulk genomics data, it is a shell command
 and it has functionalities for narrow and broad peaks.
@@ -734,38 +764,9 @@ wrapMacs2 <- function(sce, outdir, genome="mm", nomodel="--nomodel",
 ```
 
 
-
-
-
-# Create and export tracks
-
-In order to visualize tracks for a specific cell type in the *UCSC Genome Browser* 
-we implemented a function which takes care to export our data in *BigWig* format.
-To do so, the function needs some external software and the path to the original
-bam files of the experiment.
-
-In particular it uses the following tools:
-
-+ `sinto`: a python software to create bam files per each cell type starting from 
-a list of barcodes (the ones of the specified cell type)
-+ `samtools`: useful to sort and index the new bam files
-+ `deeptools` bamCoverage: to create bigwig files of the freshly created bam files
-
-Once we have the *BigWig* files, we can easily create a new session in the 
-*UCSC Genome Browser* and upload them to inspect them.
-
-Further implementation of this function will try to avoid as much external 
-tools as possible, possibly by aid of the `rtracklayer` package, and automatically
-create a session with the desired tracks.
-
-```{r, eval=FALSE}
-createTracks(sce, cellTypesCol="SingleR", cellType="CR", bamdir=path, 
-    outdir=path, ncores=10)
-```
-
 # Session Info
 
-```{r}
+```{r, tidy=TRUE}
 sessionInfo()
 ```
 
