@@ -4,7 +4,8 @@ author: "Dario Righelli"
 date: "`r Sys.Date()`"
 output: 
     BiocStyle::html_document:
-        toc: false
+        toc: true
+        toc_float: true
     vignette: >
       %\VignetteIndexEntry{Differential Accessible Regions analysis of single-cell 10X Genomics multiome data}
       %\VignetteEncoding{UTF-8}
