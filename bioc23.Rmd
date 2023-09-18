@@ -20,7 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 
 # Requirements
 
-```{r, message=FALSE}
+```{r reqs, message=FALSE}
 library(TENxMultiomeTools)
 library(AllenInstituteBrainData)
 library(Signac)
@@ -85,7 +85,7 @@ are stored in the `mcols` `DataFrame.`
 N.B. The `read10xMultiome` function will be deprecated in favor of the 
 exported functionalities of the `TENxIO` package.
 
-```{r, eval=FALSE}
+```{r read10x, eval=FALSE}
 library(TENxMultiomeTools)
 scelist <- lapply(c("multiome_website_mouse_old", 
                     "multiome_website_mouse_old_rep2"),    
@@ -98,7 +98,7 @@ saveRDS(scelist, "RDS/scelist_10xBrain.RDS")
 ```
 
 
-```{r}
+```{r loadata}
 scelist <- readRDS("RDS/scelist_10xBrain.RDS")
 sce <- scelist[[1]]
 sce
@@ -116,7 +116,7 @@ genes, but this file could be very heavy to store in memory and to manipulate.
 A way to avoid this is to create an annotation by aid of an EnsDb package, which
 downloads the annotation data for an entire genome.
 
-```{r, message=FALSE, warning=FALSE}
+```{r annotation, message=FALSE, warning=FALSE}
 library(Signac)
 library(Seurat)
 library(EnsDb.Mmusculus.v79)
@@ -150,7 +150,7 @@ to fragments < 147 bp (nucleosome-free)
 + computing the TSS enrichment score as defined by *Encode*: 
     + normalized score on the number of reads around (2000bp up/down) the TSS 
 
-```{r, eval=FALSE}
+```{r metrics, eval=FALSE}
 scelist <- lapply(scelist, computeSignacMetrics, annotation)
 
 saveRDS(scelist, file="RDS/scelist_metrics.RDS")
@@ -179,7 +179,7 @@ function.
 
 Of course the default parameters can be chosen with an heuristic approach.
 
-```{r}
+```{r filtermetr}
 scelist <- readRDS("RDS/scelist_metrics.RDS")
 scelist <- lapply(scelist, function(sce)
 {
@@ -205,11 +205,11 @@ It is also possible to pass a custom column with a user-defined column name
 with `TRUE`/`FALSE` values indicating the kept/filtered cells, by aid of the
 `filterCellsBy` and `customColName` parameters.
 
-```{r}
-lapply(scelist, function(sce)
+```{r plot_filt_cells}
+for(sce in scelist)
 {
-    plotFilteredCells(sce, name="Signac Metrics", inout="out")
-})
+    print(plotFilteredCells(sce, name="Signac Metrics", inout="out"))
+}
 ```
 
 ## Filtering Cells
