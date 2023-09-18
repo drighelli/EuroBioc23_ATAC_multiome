@@ -620,7 +620,7 @@ Just a brief look at the results
 
 ```{r showDSSE}
 grlctSE <- readRDS("RDS/grlctSE_brain.RDS")
-assay(grlctSE[[1]])
+head(assay(grlctSE[[1]]))
 rowRanges(grlctSE[[1]])
 ```
 
