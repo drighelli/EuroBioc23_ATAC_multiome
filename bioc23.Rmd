@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 # Requirements
 
 ```{r, message=FALSE}
-
+library(TENxMultiomeTools)
 library(AllenInstituteBrainData)
 library(Signac)
 library(Seurat)
