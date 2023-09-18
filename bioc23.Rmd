@@ -293,6 +293,7 @@ i.e. `Azimuth` from Rahul Satija lab.
 scelist <- lapply(scelist, function(sce) { 
     assignLabels(sce, allen, "subclass_label")
 })
+saveRDS(scelist, file="RDS/scelist_lblSR.RDS")
 ```
 
 # Visualizing cell types
@@ -302,6 +303,7 @@ understanding their clustering and this can be easily done with the `plotTSNE`
 function of the `scater` package.
 
 ```{r}
+scelist <- readRDS("RDS/scelist_lblSR.RDS")
 lapply(scelist, function(sce){table(sce$SingleR)})
 lapply(scelist, plotTSNE, colour_by="SingleR")
 ```
@@ -409,8 +411,8 @@ At this point it is possible to apply and visualize the data like bulk data.
 ```{r}
 scelistps <- readRDS("RDS/scelistps_brain.RDS")
 
-lapply(scelistps, function(sce){
-    plotPCAs(counts(sce), colData=colData(sce), shapeBy="genotype",    
+lapply(scelistps, function(sce) {
+    plotPCAs(counts(sce), colData=colData(sce), shapeBy="SingleR", 
                 colorBy="SingleR")
 })
 ```
