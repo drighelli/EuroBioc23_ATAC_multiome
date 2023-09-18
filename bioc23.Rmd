@@ -545,7 +545,7 @@ To compute this for all the cell types we include these operations in a loop
 over all the celltypes present in the SingleCellExperiments.
 
 ```{r}
-
+library(DEScan2)
 grlct <- lapply(celltypes, function(ct)
 {
     grl <- lapply(scelist, function(sce) {
