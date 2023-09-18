@@ -303,7 +303,7 @@ function of the `scater` package.
 
 ```{r}
 lapply(scelist, function(sce){table(sce$SingleR)})
-plotTSNE(sce, colour_by="SingleR")
+lapply(scelist, plotTSNE, colour_by="SingleR")
 ```
 
 
