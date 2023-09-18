@@ -206,10 +206,10 @@ with `TRUE`/`FALSE` values indicating the kept/filtered cells, by aid of the
 `filterCellsBy` and `customColName` parameters.
 
 ```{r plot_filt_cells}
-for(sce in scelist)
+lapply(scelist, function(sce)
 {
-    print(plotFilteredCells(sce, name="Signac Metrics", inout="out"))
-}
+    plotFilteredCells(sce, name="Signac Metrics", inout="out")
+})
 ```
 
 ## Filtering Cells
@@ -338,13 +338,10 @@ and looking where the doublets fall in our dataset.
 
 ```{r}
 scelist <- readRDS(file="RDS/scelist_doublets.RDS")
-for(sce in scelist)
-{
-    sce <- runPCA(sce)
-    sce <- runTSNE(sce, dimred="PCA")
-    plotTSNE(sce, colour_by="dbl.scores") + theme_bw()
-    plotTSNE(sce, colour_by="dbl.calls") + theme_bw()
-}
+scelist <- lapply(scelist, runPCA)
+scelist <- lapply(scelist, runTSNE, dimred="PCA")
+lapply(scelist, plotTSNE, colour_by="dbl.scores") + theme_bw()
+lapply(scelist, plotTSNE, colour_by="dbl.calls") + theme_bw()
 ```
 
 We can use this information to remove doublets from the dataset.
