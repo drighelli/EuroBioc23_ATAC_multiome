@@ -407,14 +407,6 @@ At this point it is possible to apply and visualize the data like bulk data.
 
 ```{r plotpcaps}
 scelistps <- readRDS("RDS/scelistps_brain.RDS")
-scelistps1 <- lapply(seq_along(scelistps), function(i)
-{
-    sce<-scelistps[[i]]
-    sce$Sample <- names(scelistps)[i]
-    rownames(colData(sce)) <- paste0(sce$Sample, "_", sce$SingleR) 
-    sce
-})
-sceps <- cbind(scelistps1[[1]], scelistps1[[2]])
 
 lapply(scelistps, function(sce)
 {
