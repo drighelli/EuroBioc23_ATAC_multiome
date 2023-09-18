@@ -206,10 +206,10 @@ with `TRUE`/`FALSE` values indicating the kept/filtered cells, by aid of the
 `filterCellsBy` and `customColName` parameters.
 
 ```{r}
-for(sce in scelist)
+lapply(scelist, function(sce)
 {
-    plotFilteredCells(sce, name="test", inout="out")
-}
+    plotFilteredCells(sce, name="Signac Metrics", inout="out")
+})
 ```
 
 ## Filtering Cells
