@@ -221,7 +221,7 @@ We highlight that the `in_signac` column is automatically computed in the
 `computeFilterCellsMetrics` and it is a logical `AND` across all the metrics 
 described in the previous "Signac" steps.
 
-```{r}
+```{r filteringcells}
 scelist <- lapply(scelist, function(sce) {
     sce <- sce[,sce$in_signac]
     sce <- logNormCounts(sce)
@@ -273,7 +273,7 @@ saveRDS(allen, "RDS/Allen_pseudo.RDS")
 We need to map the annotation in the same gene format as our dataset to compute
 the cell labels in the next step.
 
-```{r}
+```{r allen}
 allen <- readRDS("RDS/Allen_pseudo.RDS")
 ```
 
@@ -289,27 +289,27 @@ scope.
 Indeed, further versions of this function will implement other methods, 
 i.e. `Azimuth` from Rahul Satija lab.
 
-```{r, eval=FALSE}
+```{r assignlbl, eval=FALSE}
 scelist <- lapply(scelist, function(sce) { 
     assignLabels(sce, allen, "subclass_label")
 })
 saveRDS(scelist, file="RDS/scelist_lblSR.RDS")
 ```
 
-# Visualizing cell types
+## Visualizing cell types
 
 Once we have the cell types labeled for our experiment, we are interested in 
 understanding their clustering and this can be easily done with the `plotTSNE`
 function of the `scater` package.
 
-```{r}
+```{r plotlbls}
 scelist <- readRDS("RDS/scelist_lblSR.RDS")
 lapply(scelist, function(sce){table(sce$SingleR)})
 lapply(scelist, plotTSNE, colour_by="SingleR")
 ```
 
 
-## Doublets
+# Doublets
 
 Another Quality Control on the cells can be done by computing doublets scores.
 We implemented a wrapper on the `scDblFinder` package, 
@@ -325,7 +325,7 @@ Actually, we implemented the method for the scRNAseq data, but further
 implementations will take into account methods for scATACseq data and further
 investigations need to be done on how to apply these methods on both assays.
 
-```{r, eval=FALSE}
+```{r compdbls, eval=FALSE}
 library(scater)
 scelist <- lapply(scelist, logNormCounts)
 scelist <- lapply(scelist, computeDoublets, method="griffiths")
@@ -336,24 +336,24 @@ It is possible to visualize these results with a simple TSNE plot, but better
 investigations can be done when cell types labels will be assigned to our cell 
 and looking where the doublets fall in our dataset.
 
-```{r}
+```{r plotdbls}
 scelist <- readRDS(file="RDS/scelist_doublets.RDS")
 scelist <- lapply(scelist, runPCA)
 scelist <- lapply(scelist, runTSNE, dimred="PCA")
-lapply(scelist, plotTSNE, colour_by="dbl.scores") + theme_bw()
-lapply(scelist, plotTSNE, colour_by="dbl.calls") + theme_bw()
+lapply(scelist, plotTSNE, colour_by="dbl.scores")
+lapply(scelist, plotTSNE, colour_by="dbl.calls")
 ```
 
 We can use this information to remove doublets from the dataset.
 
-```{r}
+```{r filtdbls}
 scelist <- lapply(scelist, function(sce){sce[,sce$dbl.calls=="singlet"]})
 ```
 
 For teaching purposes, we now subset the celltypes to the ones with the higher 
 amount of cells.
 
-```{r}
+```{r subsetcts}
 celltypes <- c("Astro", "Oligo", "CR")
 scelist <- lapply(scelist, function(sce){sce[,sce$SingleR %in% celltypes]})
 ```
@@ -393,7 +393,7 @@ In the end, we will have a new `SingleCellExperiment` with a reduced number of
 columns, which, in turn, will be of the same number of cell types defined in our
 `SingleR` `colData` column.
 
-```{r, eval=FALSE}
+```{r aggregate, eval=FALSE}
 scelist <- lapply(scelist, swapAltExp, name="RNA")
 scelistps <- lapply(scelist, function(sce){
     applySCE(sce, aggregateAcrossCells, use.assay.type="counts",
@@ -405,12 +405,21 @@ saveRDS(scelistps, "RDS/scelistps_brain.RDS")
 
 At this point it is possible to apply and visualize the data like bulk data.
 
-```{r}
+```{r plotpcaps}
 scelistps <- readRDS("RDS/scelistps_brain.RDS")
+scelistps1 <- lapply(seq_along(scelistps), function(i)
+{
+    sce<-scelistps[[i]]
+    sce$Sample <- names(scelistps)[i]
+    rownames(colData(sce)) <- paste0(sce$Sample, "_", sce$SingleR) 
+    sce
+})
+sceps <- cbind(scelistps1[[1]], scelistps1[[2]])
 
-lapply(scelistps, function(sce) {
-    plotPCAs(counts(sce), colData=colData(sce), shapeBy="SingleR", 
-                colorBy="SingleR")
+lapply(scelistps, function(sce)
+{
+    plotPCAs(counts(sce), colData=colData(sce), shapeBy="SingleR",
+         colorBy="SingleR", returnOnly=TRUE)
 })
 ```
 
@@ -419,9 +428,9 @@ lapply(scelistps, function(sce) {
 The same operation for pseudo bulk can be made on a single ATAC experiment 
 obtaining the same number of columns as for the RNA.
 
-```{r}
+```{r showpsatac}
 scelistps <- lapply(scelistps, swapAltExp, name="ATAC")
-counts(scelistps[[1]])
+head(counts(scelistps[[1]]))
 rowRanges(scelistps[[1]])
 ```
 
@@ -466,7 +475,7 @@ Parameters Details:
 
 NB This is not needed if you already have the BAM files organized by cell types.
 
-```{r, eval=FALSE}
+```{r createBamCt, eval=FALSE}
 scelist <- lapply(scelist, function(sce){
     path <- lapply(unique(sce$SingleR), function(ct){
         createBamCt(sce, cellType=ct, 
@@ -540,7 +549,7 @@ specific cell type.
 To compute this for all the cell types we include these operations in a loop
 over all the celltypes present in the SingleCellExperiments.
 
-```{r, eval=FALSE}
+```{r descan21, eval=FALSE}
 library(DEScan2)
 
 grlct <- lapply(celltypes, function(ct)
@@ -585,7 +594,7 @@ Typically the number of peaks decreases with the increasing of the samples,
 allowing us to suddenly understand how many peaks we want to work with  
 during the further analysis.
 
-```{r}
+```{r plotdescan2}
 ## Create plot with number of peaks and "carriers" (Celltypes in this case)
 grlct <- readRDS("RDS/grlct_celltypes_brain.RDS")
 plotPeaksSamplesDEScan2(grlct)
@@ -598,7 +607,7 @@ count matrix with `countFinalRegions` function, passing as input the
 GR of the peaks and the directory of BAM files, producing as output a 
 `SummarizedExperiment`.
 
-```{r, eval=FALSE}
+```{r descan22, eval=FALSE}
 
 grlctSE <- lapply(seq_along(grlct), function(i)
 {
@@ -617,7 +626,7 @@ saveRDS(grlctSE, file="RDS/grlctSE_brain.RDS")
 
 Just a brief look at the results
 
-```{r}
+```{r showDSSE}
 grlctSE <- readRDS("RDS/grlctSE_brain.RDS")
 assay(grlctSE[[1]])
 rowRanges(grlctSE[[1]])
@@ -632,7 +641,7 @@ Accessible Regions.
 To help investigate this aspect we are going to use another dataset from the
 10x Genomics official website, with multiple already aggregated samples.
 
-```{r}
+```{r darsinput}
 library(HDF5Array)
 library(scater)
 library(RColorBrewer)
@@ -649,10 +658,10 @@ sce57aATAC$replicate <- gsub("rep6", "rep3", sce57aATAC$replicate)
 sce57aATAC$cnames <- paste0(sce57aATAC$SingleR, "_", sce57aATAC$genotype, "_" , sce57aATAC$replicate)
 colnames(sce57aATAC) <- sce57aATAC$cnames
 
-plotPCAs(counts(sce57aATAC),colData=colData(sce57aATAC), shapeBy="genotype", colorBy="SingleR")
+plotPCAs(counts(sce57aATAC),colData=colData(sce57aATAC), shapeBy="genotype", colorBy="SingleR", returnOnly=TRUE)
 
 sce57aATACct <- sce57aATAC[,sce57aATAC$SingleR=="Astro"]
-plotPCAs(counts(sce57aATACct),colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate")
+plotPCAs(counts(sce57aATACct), colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE)
 ```
 
 
@@ -661,11 +670,11 @@ plotPCAs(counts(sce57aATACct),colData=colData(sce57aATACct), shapeBy="genotype",
 We can try to normalize data to do a better comparison across the conditions, 
 removing biases and improving the quality of the further differential analysis.
 
-```{r}
+```{r darsnorms}
 library(RUVSeq)
 gr <- makeGroups(sce57aATACct$genotype)
 nn <- RUVs(counts(sce57aATACct), cIdx=rownames(sce57aATACct), k=1, scIdx=gr)
-plotPCAs(nn$normalizedCounts, colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate")  
+plotPCAs(nn$normalizedCounts, colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE)  
 sce57aATACct$RUVs_W <- nn$W
 ```
 
@@ -674,7 +683,7 @@ sce57aATACct$RUVs_W <- nn$W
 We can now do the Differential Analysis by using edgeR, but as we can notice, 
 there are no DARs between these two time-points.
 
-```{r}
+```{r dars1}
 DARsdf <- applyEdgeR(counts(sce57aATACct), colData=colData(sce57aATACct), 
     factors="genotype", wnames="RUVs_W", contrasts="AD - WT", p.threshold=1)[[1]]
 head(DARsdf)
@@ -691,7 +700,7 @@ As we can notice, there are very few DARs emerging, even when we are able to exp
 a very high percentage of variance with the first Principal Component.
 This highlights the very low number of DARs with this data.
 
-```{r}
+```{r dars2input}
 library(darioscripts)
 sce57179aATAC <- readRDS("RDS/sce_alz_57_179_ps_ATAC.RDS")
 sce57179aATAC$replicate <- gsub("rep4", "rep2", sce57179aATAC$replicate)
@@ -699,16 +708,16 @@ sce57179aATAC$replicate <- gsub("rep5", "rep3", sce57179aATAC$replicate)
 sce57179aATAC$cnames <- paste0(sce57179aATAC$SingleR, "_", sce57179aATAC$genotype, "_" , sce57179aATAC$replicate)
 colnames(sce57179aATAC) <- sce57179aATAC$cnames
 
-plotPCAs(counts(sce57179aATAC),colData=colData(sce57179aATAC), shapeBy="genotype", colorBy="SingleR")+ scale_color_manual(values = palette)
+plotPCAs(counts(sce57179aATAC),colData=colData(sce57179aATAC), shapeBy="genotype", colorBy="SingleR", returnOnly=TRUE)+ scale_color_manual(values = palette)
 
 sce57179aATACct <- sce57179aATAC[,sce57179aATAC$SingleR=="Oligo"]
-plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate")
+plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE)
 ```
 
 
 
 
-```{r}
+```{r dars2}
 library(RUVSeq)
 gr <- makeGroups(sce57179aATACct$gcondition)
 nn <- RUVs(counts(sce57179aATACct), cIdx=rownames(sce57179aATACct), k=1, scIdx=gr)
@@ -739,42 +748,9 @@ one per each cell type. (see section *Creating BAM files per cell types*)
 We created an ad-hoc wrapper for working with MACS2 and previously constructed
 BAM files taking a SingleCellExperiment as input.
 
-```{r, eval=FALSE}
-
-wrapMacs2 <- function(sce, outdir, genome="mm", nomodel="--nomodel", 
-    extsize=200, shift=-(extsize/2), broadCall="--broad", bampath=NULL)
-{
-    stopifnot(is(sce, "SingleCellExperiment"))
-    
-    if(is.null(bampath)) bampath <- metadata(sce)$ct_bams 
-    if(S4Vectors::isEmpty(bampath)) 
-        stop("please provide a path for locating bam files!")
-    
-    bamfiles <- list.files(bampath, pattern="*_sorted.bam$", full.names=TRUE)
-    bamfiles <- bamfiles[grep("ATAC", bamfiles)]
-    if(isEmpty(bamfiles))
-        stop("No BAM files detected in ", bampath)
-    if(!dir.exists(outdir)) dir.create(outdir, recursive=TRUE)
-    
-
-    for(bfile in bamfiles)
-    {
-        cmd <- paste0("macs2 callpeak --treatment ", bfile, 
-                    " --name ", basename(bfile), 
-                    " --outdir ", outdir, 
-                    " --format BAM --gsize ", genome, 
-                    " ", nomodel,
-                    " --extsize ", extsize,
-                    " --shift ", shift,
-                    " ", broadCall)
-                    
-        print(cmd)
-        system(cmd)
-    }
-    
-    ## read peaks for all the produced files, store the peaks in the rowRanges of sce
-    ## add an extra column for the cell type
-}
+```{r macs, eval=FALSE}
+wrapMacs2(sce, outdir="peaks_dir", genome="mm", extsize=200,
+        broadCall="--broad", bampath=metadata(sce)$ct_bams)
 ```
 
 
