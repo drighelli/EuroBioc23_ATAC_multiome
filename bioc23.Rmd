@@ -107,6 +107,7 @@ palette = brewer.pal.info[brewer.pal.info$category == 'qual',]
 palette = unlist(mapply(brewer.pal, palette$maxcolors, rownames(palette)))
 
 scelist <- loadExpList(postfix="10xBrain")
+names(scelist) <- c("Brain_R1", "Brain_R2")
 sce <- scelist[[1]]
 sce
 colData(sce)
