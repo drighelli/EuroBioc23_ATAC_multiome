@@ -12,7 +12,11 @@ saveExpList <- function(scelist, postfix, dir.prefix="RDS/scelist")
 
 loadExpList <- function(postfix, dir.prefix="RDS/scelist")
 {
-    scelist <- lapply(seq_along(scelist), function(i){
+    message("Reading ", dir.prefix, "_", postfix, " files")
+    files <- list.files(recursive=TRUE)
+    dirs <- unique(dirname(files[grep(
+            paste0(dir.prefix, "_", postfix, "_[1-9]"), files)]))
+    scelist <- lapply(seq_along(dirs), function(i){
         loadHDF5SummarizedExperiment(dir=paste0(dir.prefix, "_", postfix, "_", i))})
     return(scelist)
 }
