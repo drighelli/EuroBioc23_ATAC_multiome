@@ -30,6 +30,9 @@ library(EnsDb.Mmusculus.v79)
 library(scuttle)
 library(scater)
 library(darioscripts)
+library(HDF5Array)
+library(RColorBrewer)
+source("R/utils.R")
 ```
 
 # Introduction
@@ -58,8 +61,7 @@ We used two replicates of the same mouse brain tissue present on the official
 
 # Loading Data
 
-To facilitate 10x Genomics Multiome data loading we can use the `read10xMultiome` 
-function, which takes the following parameters as input:
+To facilitate 10x Genomics Multiome data loading we can use the `read10xMultiome` function, which takes the following parameters as input:
 
 + `sample_path`: the path of the experiment
 + `type`: the type of data to load, sparse/hdf5
@@ -95,12 +97,16 @@ scelist <- lapply(c("multiome_website_mouse_old",
                 addfrags=TRUE)
 
 names(scelist) <- c("Brain_R1", "Brain_R2")
-saveRDS(scelist, "RDS/scelist_10xBrain.RDS")
+saveExpList(scelist, postfix="10xBrain")
 ```
 
 
 ```{r loadata}
-scelist <- readRDS("RDS/scelist_10xBrain.RDS")
+n <- 50
+palette = brewer.pal.info[brewer.pal.info$category == 'qual',]
+palette = unlist(mapply(brewer.pal, palette$maxcolors, rownames(palette)))
+
+scelist <- loadExpList(postfix="10xBrain")
 sce <- scelist[[1]]
 sce
 colData(sce)
@@ -114,13 +120,10 @@ rowRanges(altExp(sce))
 
 The 10x Multiome default output comes with an `annotation` file for the detected
 genes, but this file could be very heavy to store in memory and to manipulate.
-A way to avoid this is to create an annotation by aid of an EnsDb package, which
+A way to avoid this is to create an annotation by aid of an `EnsDb` package, which
 downloads the annotation data for an entire genome.
 
 ```{r annotation, message=FALSE, warning=FALSE}
-library(Signac)
-library(Seurat)
-library(EnsDb.Mmusculus.v79)
 ensdb <- EnsDb.Mmusculus.v79
 seqlevelsStyle(ensdb) <- "UCSC"
 annotation <- GetGRangesFromEnsDb(ensdb = ensdb)
@@ -130,7 +133,7 @@ genome(annotation) <- "mm10"
 
 # Quality Control
 
-Once that we have the data loaded and an annotation object in GenomicRanges format,
+Once that we have the data loaded and an annotation object in `GenomicRanges` format,
 we can start by computing some quality control metrics.
 
 At the moment we defined three quality controls approaches, the Signac metrics, 
@@ -154,7 +157,7 @@ to fragments < 147 bp (nucleosome-free)
 ```{r metrics, eval=FALSE}
 scelist <- lapply(scelist, computeSignacMetrics, annotation)
 
-saveRDS(scelist, file="RDS/scelist_metrics.RDS")
+saveExpList(scelist, postfix="10xBrain_metrics")
 ```
 
 
@@ -181,7 +184,7 @@ function.
 Of course the default parameters can be chosen with an heuristic approach.
 
 ```{r filtermetr}
-scelist <- readRDS("RDS/scelist_metrics.RDS")
+scelist <- loadExpList(postfix="10xBrain_metrics")
 scelist <- lapply(scelist, function(sce)
 {
     computeFilterCellsMetrics(sce, metric="quantile",
@@ -252,10 +255,10 @@ annotated at three different levels of taxonomy.
 
 This reference has three levels of annotation graularity:
 
-+ the cluster level is the level where the cells have been clustered in
-+ the subclass level is the level where the cells have been validated thank to cell-type
++ the **cluster** level is the level where the cells have been clustered in
++ the **subclass** level is the level where the cells have been validated thank to cell-type
 markers
-+ the class level is the level where the cells have been grouped together because
++ the **class** level is the level where the cells have been grouped together because
 of cell-types belonging to the same cell family.
 
 After downloading the dataset, it could be useful to create pseudo-bulk counts
@@ -271,8 +274,7 @@ allen <- logNormCounts(allen)
 saveRDS(allen, "RDS/Allen_pseudo.RDS")
 ```
 
-We need to map the annotation in the same gene format as our dataset to compute
-the cell labels in the next step.
+We just load the already computed reference for lack of time.
 
 ```{r allen}
 allen <- readRDS("RDS/Allen_pseudo.RDS")
@@ -294,7 +296,7 @@ i.e. `Azimuth` from Rahul Satija lab.
 scelist <- lapply(scelist, function(sce) { 
     assignLabels(sce, allen, "subclass_label")
 })
-saveRDS(scelist, file="RDS/scelist_lblSR.RDS")
+saveExpList(scelist, postfix="10xBrain_lblSR")
 ```
 
 ## Visualizing cell types
@@ -304,9 +306,11 @@ understanding their clustering and this can be easily done with the `plotTSNE`
 function of the `scater` package.
 
 ```{r plotlbls}
-scelist <- readRDS("RDS/scelist_lblSR.RDS")
+scelist <- loadExpList(postfix="10xBrain_lblSR")
 lapply(scelist, function(sce){table(sce$SingleR)})
-lapply(scelist, plotTSNE, colour_by="SingleR")
+ggp <- lapply(scelist, plotTSNE, colour_by="SingleR") 
+ggp[[1]] + scale_color_manual(values=palette)
+ggp[[2]] + scale_color_manual(values=palette)
 ```
 
 
@@ -327,10 +331,9 @@ implementations will take into account methods for scATACseq data and further
 investigations need to be done on how to apply these methods on both assays.
 
 ```{r compdbls, eval=FALSE}
-library(scater)
 scelist <- lapply(scelist, logNormCounts)
 scelist <- lapply(scelist, computeDoublets, method="griffiths")
-saveRDS(scelist, file="RDS/scelist_doublets.RDS")
+saveExpList(scelist, postfix="10xBrain_doublets")
 ```
 
 It is possible to visualize these results with a simple TSNE plot, but better
@@ -338,7 +341,7 @@ investigations can be done when cell types labels will be assigned to our cell
 and looking where the doublets fall in our dataset.
 
 ```{r plotdbls}
-scelist <- readRDS(file="RDS/scelist_doublets.RDS")
+scelist <- loadExpList(postfix="10xBrain_doublets")
 scelist <- lapply(scelist, runPCA)
 scelist <- lapply(scelist, runTSNE, dimred="PCA")
 lapply(scelist, plotTSNE, colour_by="dbl.scores")
@@ -355,7 +358,7 @@ For teaching purposes, we now subset the celltypes to the ones with the higher
 amount of cells.
 
 ```{r subsetcts}
-celltypes <- c("Astro", "Oligo", "CR")
+celltypes <- c("Astro", "Oligo")
 scelist <- lapply(scelist, function(sce){sce[,sce$SingleR %in% celltypes]})
 ```
 
@@ -400,7 +403,7 @@ scelistps <- lapply(scelist, function(sce){
     applySCE(sce, aggregateAcrossCells, use.assay.type="counts",
         id=DataFrame(label=sce$SingleR))
     })
-    
+
 saveRDS(scelistps, "RDS/scelistps_brain.RDS")
 ```
 
@@ -588,7 +591,7 @@ allowing us to suddenly understand how many peaks we want to work with
 during the further analysis.
 
 ```{r plotdescan2}
-## Create plot with number of peaks and "carriers" (Celltypes in this case)
+## Create plot with number of peaks and "carriers" (Celltypes in this case
 grlct <- readRDS("RDS/grlct_celltypes_brain.RDS")
 plotPeaksSamplesDEScan2(grlct)
 ```
@@ -635,12 +638,7 @@ To help investigate this aspect we are going to use another dataset from the
 10x Genomics official website, with multiple already aggregated samples.
 
 ```{r darsinput}
-library(HDF5Array)
-library(scater)
-library(RColorBrewer)
-n <- 50
-palette = brewer.pal.info[brewer.pal.info$category == 'qual',]
-palette = unlist(mapply(brewer.pal, palette$maxcolors, rownames(palette)))
+
 sce1 <- loadHDF5SummarizedExperiment("sce_Alzheimer_Ann_Tsn")
 plotTSNE(sce1, colour_by="SingleR") + theme_bw() + scale_color_manual(values = palette)
 plotTSNE(sce1, colour_by="condition") + theme_bw() 
