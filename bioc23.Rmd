@@ -293,7 +293,7 @@ scope.
 Indeed, further versions of this function will implement other methods, 
 i.e. `Azimuth` from Rahul Satija lab.
 
-```{r assignlbl, eval=FALSE}
+```{r assignlbl, eval=TRUE}
 scelist <- lapply(scelist, function(sce) { 
     assignLabels(sce, allen, "subclass_label")
 })
@@ -331,7 +331,7 @@ Actually, we implemented the method for the scRNAseq data, but further
 implementations will take into account methods for scATACseq data and further
 investigations need to be done on how to apply these methods on both assays.
 
-```{r compdbls, eval=FALSE}
+```{r compdbls, eval=TRUE}
 scelist <- lapply(scelist, logNormCounts)
 scelist <- lapply(scelist, computeDoublets, method="griffiths")
 saveExpList(scelist, postfix="10xBrain_doublets")
