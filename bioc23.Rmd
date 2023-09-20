@@ -155,7 +155,7 @@ to fragments < 147 bp (nucleosome-free)
 + computing the TSS enrichment score as defined by *Encode*: 
     + normalized score on the number of reads around (2000bp up/down) the TSS 
 
-```{r metrics, eval=FALSE}
+```{r metrics, eval=TRUE}
 scelist <- lapply(scelist, computeSignacMetrics, annotation)
 
 saveExpList(scelist, postfix="10xBrain_metrics")
