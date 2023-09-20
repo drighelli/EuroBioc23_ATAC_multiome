@@ -155,7 +155,7 @@ to fragments < 147 bp (nucleosome-free)
 + computing the TSS enrichment score as defined by *Encode*: 
     + normalized score on the number of reads around (2000bp up/down) the TSS 
 
-```{r metrics, eval=TRUE}
+```{r metrics, eval=FALSE}
 scelist <- lapply(scelist, computeSignacMetrics, annotation)
 
 saveExpList(scelist, postfix="10xBrain_metrics")
@@ -293,7 +293,7 @@ scope.
 Indeed, further versions of this function will implement other methods, 
 i.e. `Azimuth` from Rahul Satija lab.
 
-```{r assignlbl, eval=TRUE}
+```{r assignlbl, eval=FALSE}
 scelist <- lapply(scelist, function(sce) { 
     assignLabels(sce, allen, "subclass_label")
 })
@@ -331,7 +331,7 @@ Actually, we implemented the method for the scRNAseq data, but further
 implementations will take into account methods for scATACseq data and further
 investigations need to be done on how to apply these methods on both assays.
 
-```{r compdbls, eval=TRUE}
+```{r compdbls, eval=FALSE}
 scelist <- lapply(scelist, logNormCounts)
 scelist <- lapply(scelist, computeDoublets, method="griffiths")
 saveExpList(scelist, postfix="10xBrain_doublets")
