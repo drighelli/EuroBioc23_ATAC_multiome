@@ -227,6 +227,7 @@ We highlight that the `in_signac` column is automatically computed in the
 described in the previous "Signac" steps.
 
 ```{r filteringcells}
+set.seed(666)
 scelist <- lapply(scelist, function(sce) {
     sce <- sce[,sce$in_signac]
     sce <- logNormCounts(sce)
@@ -342,6 +343,7 @@ investigations can be done when cell types labels will be assigned to our cell
 and looking where the doublets fall in our dataset.
 
 ```{r plotdbls}
+set.seed(666)
 scelist <- loadExpList(postfix="10xBrain_doublets")
 scelist <- lapply(scelist, runPCA)
 scelist <- lapply(scelist, runTSNE, dimred="PCA")
@@ -353,13 +355,14 @@ We can use this information to remove doublets from the dataset.
 
 ```{r filtdbls}
 scelist <- lapply(scelist, function(sce){sce[,sce$dbl.calls=="singlet"]})
+scelist
 ```
 
 For teaching purposes, we now subset the celltypes to the ones with the higher 
 amount of cells.
 
 ```{r subsetcts}
-celltypes <- c("Astro", "Oligo")
+celltypes <- c("Astro", "CR", "Oligo")
 scelist <- lapply(scelist, function(sce){sce[,sce$SingleR %in% celltypes]})
 ```
 
@@ -594,7 +597,9 @@ during the further analysis.
 ```{r plotdescan2}
 ## Create plot with number of peaks and "carriers" (Celltypes in this case
 grlct <- readRDS("RDS/grlct_celltypes_brain.RDS")
+names(grlct) <- celltypes
 plotPeaksSamplesDEScan2(grlct)
+grlct[[1]]
 ```
 
 ## Computing Count Matrix 
@@ -625,6 +630,7 @@ Just a brief look at the results
 
 ```{r showDSSE}
 grlctSE <- readRDS("RDS/grlctSE_brain.RDS")
+names(grlctSE) <- celltypes
 head(assay(grlctSE[[1]]))
 rowRanges(grlctSE[[1]])
 ```
@@ -638,20 +644,24 @@ Accessible Regions.
 To help investigate this aspect we are going to use another dataset from the
 10x Genomics official website, with multiple already aggregated samples.
 
-```{r darsinput}
-
+```{r darsinput1}
 sce1 <- loadHDF5SummarizedExperiment("sce_Alzheimer_Ann_Tsn")
 plotTSNE(sce1, colour_by="SingleR") + theme_bw() + scale_color_manual(values = palette)
-plotTSNE(sce1, colour_by="condition") + theme_bw() 
+plotTSNE(sce1, colour_by="condition") + theme_bw()
+```
 
-library(darioscripts)
+
+```{r darsinput2}
 sce57aATAC <- readRDS("RDS/sce_alz_57_ps_ATAC.RDS")
 sce57aATAC$replicate <- gsub("rep6", "rep3", sce57aATAC$replicate)
 sce57aATAC$cnames <- paste0(sce57aATAC$SingleR, "_", sce57aATAC$genotype, "_" , sce57aATAC$replicate)
 colnames(sce57aATAC) <- sce57aATAC$cnames
 
 plotPCAs(counts(sce57aATAC),colData=colData(sce57aATAC), shapeBy="genotype", colorBy="SingleR", returnOnly=TRUE)
+```
 
+
+```{r darsinput3}
 sce57aATACct <- sce57aATAC[,sce57aATAC$SingleR=="Astro"]
 plotPCAs(counts(sce57aATACct), colData=colData(sce57aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE)
 ```
@@ -701,9 +711,12 @@ sce57179aATAC$cnames <- paste0(sce57179aATAC$SingleR, "_", sce57179aATAC$genotyp
 colnames(sce57179aATAC) <- sce57179aATAC$cnames
 
 plotPCAs(counts(sce57179aATAC),colData=colData(sce57179aATAC), shapeBy="genotype", colorBy="SingleR", returnOnly=TRUE)+ scale_color_manual(values = palette)
+```
 
+
+```{r dars2input}
 sce57179aATACct <- sce57179aATAC[,sce57179aATAC$SingleR=="Oligo"]
-plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE)
+plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE, prefix="Oligo")
 ```
 
 
@@ -713,7 +726,7 @@ plotPCAs(counts(sce57179aATACct),colData=colData(sce57179aATACct), shapeBy="geno
 library(RUVSeq)
 gr <- makeGroups(sce57179aATACct$gcondition)
 nn <- RUVs(counts(sce57179aATACct), cIdx=rownames(sce57179aATACct), k=1, scIdx=gr)
-# plotPCAs(nn$normalizedCounts, colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate")  
+plotPCAs(nn$normalizedCounts, colData=colData(sce57179aATACct), shapeBy="genotype", colorBy="replicate", returnOnly=TRUE, prefix="Oligo RUVs")
 sce57179aATACct$RUVs_W <- nn$W
 DARsdf <- applyEdgeR(counts(sce57179aATACct), colData=colData(sce57179aATACct), 
     factors="genotype", wnames="RUVs_W", contrasts="AD - WT", p.threshold=1)[[1]]
